@@ -1,0 +1,62 @@
+# Load the required libraries
+library(shiny)
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+
+# Define the Shiny UI
+ui <- fluidPage(
+  titlePanel("Financial Analysis"),
+  sidebarLayout(
+    sidebarPanel(
+      fileInput("file", "Upload CSV File",
+                accept = c("text/csv",
+                           "text/comma-separated-values,text/plain",
+                           ".csv")),
+      helpText("The CSV file should have columns: Date, Account, Description, Category, Tags, Amount")
+    ),
+    mainPanel(
+      plotOutput("lineGraph")
+    )
+  )
+)
+
+# Define the Shiny server
+server <- function(input, output) {
+  # Read the CSV file
+  data <- reactive({
+    req(input$file)
+    read_csv(input$file$datapath)
+  })
+  
+  # Process the data and calculate monthly totals for income and costs
+  monthly_totals <- reactive({
+    data() %>%
+      mutate(Date = as.Date(Date, "%m/%d/%Y")) %>%
+      mutate(Month = floor_date(Date, "month")) %>%
+      group_by(Month) %>%
+      summarize(Income = sum(ifelse(Amount > 0, Amount, 0), na.rm = TRUE),
+                Costs = sum(ifelse(Amount < 0, Amount, 0), na.rm = TRUE))
+  })
+  
+  # Create the line graph
+  output$lineGraph <- renderPlot({
+    ggplot(monthly_totals(), aes(x = Month)) +
+      geom_line(aes(y = Income, color = "Income")) +
+      geom_smooth(aes(y = Income, color = "Income"), method = "lm", se = FALSE, linetype = "dashed") +
+      geom_line(aes(y = -Costs, color = "Costs")) +
+      geom_smooth(aes(y = -Costs, color = "Costs"), method = "lm", se = FALSE, linetype = "dashed") +
+      labs(title = "Monthly Income and Costs Trend",
+           x = "Month",
+           y = "Amount") +
+      scale_color_manual(values = c("Income" = "blue", "Costs" = "red"),
+                         labels = c("Income" = "Income", "Costs" = "Costs"),
+                         name = "Type") +
+      theme_minimal()
+  })
+  
+}
+
+# Run the Shiny app
+shinyApp(ui = ui, server = server, options = list(height = 1400))
